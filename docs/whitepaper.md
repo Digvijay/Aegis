@@ -54,15 +54,25 @@ When the system reaches its word limit (the "Boundary"), it checks if it is curr
 **Result**: The table always stays in one piece.
 
 ### 4.1 Visualizing the Protocol
-The following figure demonstrates how Aegis interprets a complex, multi-column document with diverse structural elements.
+The following figures demonstrate how Aegis interprets complex layouts, from vertical columns in academic papers to non-linear illustrations in assembly manuals.
 
+#### Scenario A: The Multi-Column Technical Paper
 ![Geometric Integrity Protocol: Annotated Layout](assets/annotated_layout.png)
 *Figure 3: Aegis Protocol applying Grid Laws and No-Cut Zones to a complex technical paper.*
 
-**Key Visual Components:**
-*   **Grid Law Alignment (Green)**: The vertical dashed lines identify the "Invariants"—the structural backbone of the columns. Any deviation in text flow that disrupts these lines triggers a structure check.
-*   **No-Cut Zones (Red)**: Aegis has identified the code block and state machine diagram as Atomic Units. A chunk boundary will never be allowed to split these regions.
-*   **Boundary Pivot (Blue)**: This demonstrates "Backpressure" in action. A proposed 512-token limit hits the middle of Figure 2. Aegis detects the collision and applies the **Advance** strategy, stretching the chunk to 640 tokens to keep the diagram contextually whole.
+**Key Observations:**
+*   **Grid Law Alignment (Green)**: Vertical lines identify the structural backbone of columns.
+*   **No-Cut Zones (Red)**: Code blocks and diagrams are "locked" to prevent context fragmentation.
+*   **Boundary Pivot (Blue)**: The **Advance** strategy is applied to stretch the chunk to keep Figure 2 whole.
+
+#### Scenario B: The Illustration-Heavy Instruction Manual
+![Geometric Integrity Protocol: IKEA Step 14](assets/ikea_step14_annotated.png)
+*Figure 4: Aegis Protocol detecting invariants in a graphic-heavy IKEA manual.*
+
+**Key Observations:**
+*   **Geometric Invariants (Green)**: Despite minimal text, Aegis detects the vertical alignment of the shelves and furniture frame as "Invariants."
+*   **Visual Logic Anchors (Red)**: Detail callouts and assembly steps are identified as non-splittable units.
+*   **Reverse Backpressure (Blue)**: A boundary hit in the middle of a shelf triggers a **Recede** strategy, shortening the chunk to ensure the next chunk starts clean at the top of the furniture unit.
 
 ## 5. Implementation & Efficiency
 Because this uses basic geometry (X,Y coordinates) rather than "reading" the content with an AI, it is:
