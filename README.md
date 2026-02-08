@@ -26,20 +26,59 @@ Aegis is more than just a library; it is a **Deterministic Ingestion Standard** 
 ```csharp
 using Aegis.Integrity;
 using Aegis.Integrity.Pipelines;
+using Microsoft.Extensions.Logging; // Required for LoggerFactory
 
-// 1. Initialize the Engine
-var aegis = new AegisEngine();
+// 1. Initialize Aegis
+using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+var engine = new AegisEngine(loggerFactory);
 
-// 2. Stream verified chunks directly from a PDF
-using var stream = File.OpenRead("document.pdf");
-await foreach (var chunk in aegis.StreamVerifiedChunksAsync(stream, maxTokens: 512))
+// 2. Stream Verified Chunks
+using var pdfStream = File.OpenRead("document.pdf"); // Assuming 'document.pdf' exists
+await foreach (var chunk in engine.StreamVerifiedChunksAsync(pdfStream, maxTokens: 512))
 {
-    Console.WriteLine($"[Chunk Length: {chunk.Content.Length}] Page: {chunk.Page}");
-    Console.WriteLine(chunk.Content);
+    Console.WriteLine($"Chunk (Page {chunk.Page}): {chunk.Content}");
     
     // Push to Vector Store...
 }
 ```
+
+For more detailed examples, see our **[Samples Gallery](docs/SAMPLES.md)**.
+
+## RAG Integration Pattern
+
+Aegis metadata is designed to be mapped directly into your Vector Store (e.g., Azure AI Search, Pinecone, or Weaviate) to enable high-precision citations and debugging.
+
+### Recommended Schema Mapping
+
+| Aegis Property | Vector Store Field | Purpose |
+| :--- | :--- | :--- |
+| `chunk.Content` | `content` (Searchable) | The semantically preserved text for LLM context. |
+| `chunk.Page` | `metadata_page` (Filterable) | Enables "Link to Source" in your UI. |
+| `chunk.TokenCount` | `metadata_tokens` | Helps manage LLM context window limits. |
+| `chunk.Discriminator`| `metadata_chunk_type`| Audit trail (e.g., `Preserved-Table`, `TokenLimit`). |
+
+### C# Example: Pushing to AI Search
+
+```csharp
+var chunks = engine.StreamVerifiedChunksAsync(pdfStream, 512);
+
+await foreach (var chunk in chunks)
+{
+    var document = new {
+        id = Guid.NewGuid().ToString(),
+        content = chunk.Content,
+        metadata = new {
+            page = chunk.Page,
+            tokens = chunk.TokenCount,
+            integrity_reason = chunk.Discriminator // e.g., "Preserved-Table"
+        }
+    };
+    
+    // upload to search index...
+}
+```
+
+For more detailed examples, see our **[Samples Gallery](docs/SAMPLES.md)**.
 
 ## Quick Start (Python)
 
