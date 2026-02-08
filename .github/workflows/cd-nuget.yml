@@ -1,0 +1,38 @@
+
+name: CD NuGet
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish-nuget:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+
+    - name: Get Version
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release /p:Version=${{ steps.get_version.outputs.VERSION }}
+
+    - name: Pack Integrity
+      run: dotnet pack src/Aegis.Integrity/Aegis.Integrity.csproj --no-build --configuration Release /p:Version=${{ steps.get_version.outputs.VERSION }} --output .
+
+    - name: Pack Producer
+      run: dotnet pack src/Aegis.Producer/Aegis.Producer.csproj --no-build --configuration Release /p:Version=${{ steps.get_version.outputs.VERSION }} --output .
+
+
+    - name: Push to NuGet
+      run: dotnet nuget push *.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
