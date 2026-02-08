@@ -53,6 +53,17 @@ When the system reaches its word limit (the "Boundary"), it checks if it is curr
 
 **Result**: The table always stays in one piece.
 
+### 4.1 Visualizing the Protocol
+The following figure demonstrates how Aegis interprets a complex, multi-column document with diverse structural elements.
+
+![Geometric Integrity Protocol: Annotated Layout](assets/annotated_layout.png)
+*Figure 3: Aegis Protocol applying Grid Laws and No-Cut Zones to a complex technical paper.*
+
+**Key Visual Components:**
+*   **Grid Law Alignment (Green)**: The vertical dashed lines identify the "Invariants"—the structural backbone of the columns. Any deviation in text flow that disrupts these lines triggers a structure check.
+*   **No-Cut Zones (Red)**: Aegis has identified the code block and state machine diagram as Atomic Units. A chunk boundary will never be allowed to split these regions.
+*   **Boundary Pivot (Blue)**: This demonstrates "Backpressure" in action. A proposed 512-token limit hits the middle of Figure 2. Aegis detects the collision and applies the **Advance** strategy, stretching the chunk to 640 tokens to keep the diagram contextually whole.
+
 ## 5. Implementation & Efficiency
 Because this uses basic geometry (X,Y coordinates) rather than "reading" the content with an AI, it is:
 - **Instant**: It runs as fast as your computer can read a file.
