@@ -1,7 +1,8 @@
-
 # Aegis: The Geometric Integrity Protocol (GIP)
 
-Aegis is a high-performance .NET library designed to solve the "Structural Fragmentation" problem in Retrieval-Augmented Generation (RAG). By utilizing Spatial Grid Laws, it ensures that tables, lists, and multi-column layouts are never "shredded" during the document chunking process.
+**A cross-platform Geometric Integrity Protocol (GIP) for RAG that prevents structural fragmentation of tables and lists using spatial Grid Laws. A unified standard for .NET and Python.**
+
+Aegis is more than just a library; it is a **Deterministic Ingestion Standard** for enterprise RAG systems. It solves the "Structural Fragmentation" problem by utilizing Spatial Grid Laws to ensure that tables, lists, and multi-column layouts are never "shredded" during the chunking process, regardless of whether your stack is built on .NET or Python.
 
 ## Key Features
 
@@ -10,7 +11,7 @@ Aegis is a high-performance .NET library designed to solve the "Structural Fragm
 *   **Grid Law Discovery**: Automatically identifies tabular structures using X-coordinate variance—no OCR or AI models required.
 *   **Elastic Chunking**: Dynamically adjusts chunk boundaries to fit the document's visual "gaps."
 *   **Cloud-Native Pipe**: Built on `IAsyncEnumerable` and `Span<T>` for high-throughput, low-memory streaming in serverless environments (Azure Functions).
-*   **The Unified Standard**: Includes a Python wrapper (`aegis_integrity`) that binds to the exact same logic, allowing Data Science (Python) and Backend Engineering (.NET) to share a single, verifiable ingestion protocol.
+*   **The Unified Standard**: Includes a Python wrapper (`aegis_integrity`) that binds to the exact same logic, allowing Data Science (Python) and Backend Engineering (C#) to share a single, verifiable ingestion protocol.
 
 ## Components
 

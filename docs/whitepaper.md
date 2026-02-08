@@ -1,9 +1,9 @@
 
 # Whitepaper: The Geometric Integrity Protocol (GIP)
-**Technical Specification: Deterministic Data Ingestion for Retrieval-Augmented Generation**
+**Technical Specification: A Unified Standard for Deterministic Data Ingestion in RAG**
 
 ## 1. Abstract
-The effectiveness of Retrieval-Augmented Generation (RAG) is restricted by how we "chunk" data. Standard methods slice text into chunks based on character counts, often breaking apart tables and related information. This paper introduces the **Geometric Integrity Protocol (GIP)**. It treats a document not as a string of words, but as a map of coordinates. By using simple geometry and spatial math, GIP ensures that related data—like the rows of a table—are never split between two chunks.
+The effectiveness of Retrieval-Augmented Generation (RAG) is fundamentally restricted by the "Structural Fragmentation" of source documents. Standard chunking methods slice text into chunks based on character or token counts, often bisecting tables and breaking semantic relationships. This paper introduces the **Geometric Integrity Protocol (GIP)**—a cross-platform specification that treats documents as 2D coordinate maps rather than linear strings. By using spatial geometry and "Grid Law" heuristics, GIP provides a unified standard for .NET and Python environments to ensure that structural context is preserved throughout the ingestion pipeline.
 
 ## 2. The Problem: The "Slicing" Effect
 Most AI systems read documents like a long ribbon of text. When the system reaches its "limit" (e.g., 500 words), it cuts the ribbon.

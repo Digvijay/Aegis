@@ -56,8 +56,3 @@ env/
 samples/*/bin/
 samples/*/obj/
 samples/*/.venv/
-
-# --- Antigravity/Brain ---
-# The .brain directory is systemic, but users might want to ignore it if not sharing Agent metadata.
-# .brain/ 
-.truth
