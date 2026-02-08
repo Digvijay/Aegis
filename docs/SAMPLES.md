@@ -40,4 +40,4 @@ An enterprise-ready sample demonstrating how to bridge cloud OCR services with A
 
 ### Local Test Data
 **Path:** `samples/random_input`
-Contains sample PDFs (Invoices, IKEA manuals) used by the benchmark samples for stress-testing table integrity.
+Contains sample PDFs (Technical Papers, IKEA manuals) used by the benchmark samples for stress-testing table integrity.
