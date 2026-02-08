@@ -37,7 +37,11 @@ If a line has multiple large gaps that line up vertically with the gaps in the l
 
 ### Layer B: The Proximity Rule
 Information that is physically close together on a page is usually related. We use the Pythagorean Theorem to calculate the distance (d) between objects:
-$$ d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2} $$
+
+$$
+d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}
+$$
+
 If the distance between a label and a data point is very small, they are "locked" together. The system will not allow a chunk boundary to come between them.
 
 ### Layer C: The Elastic Boundary (The Fix)
