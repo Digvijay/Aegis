@@ -19,7 +19,8 @@ Aegis is more than just a library; it is a **Deterministic Ingestion Standard** 
 - **Aegis.Producer**: Adapter for ingesting Azure AI Document Intelligence results (`AnalyzeResult`) into Aegis Manifests.
 - **Aegis.Python**: Python wrapper (`aegis_integrity.py`) to consume Geometric Manifests.
 - **Aegis.Visualizer**: WinUI 3 tool to visualize "No-Cut Zones" and verify chunk boundaries (Source code included).
-- **Aegis.Sample.Console**: A benchmark console app that proves "Structural Fragmentation" by comparing fixed-size chunking against Aegis.
+- **Aegis.Sample.Console**: A benchmark console app that proves "Structural Fragmentation" using C#.
+- **Aegis.Sample.BenchmarkJudge**: An LLM-as-a-Judge benchmark (Python) that provides empirical scores for structural fidelity and semantic coherence vs. industry splitters.
 
 ## Quick Start (C#)
 
