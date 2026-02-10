@@ -37,7 +37,9 @@ def run_ragas_benchmark(pdf_path: str = ""):
         print(f"Error: {resolved_path} not found.")
         return
 
-    # 2. Extract Data & Detect Layout
+    # SILENCE PDF PLUMBER WARNINGS (User requested)
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+    
     atoms = []
     idx = 0
     with pdfplumber.open(resolved_path) as pdf:
@@ -72,71 +74,85 @@ def run_ragas_benchmark(pdf_path: str = ""):
         }
     ]
 
-    # 4. Chunking Strategies
+    # 4. Chunking Strategies (Adding overlap for a more fair LangChain comparison)
     strategies = {
         "Aegis (Geometric)": [c.content for c in IntegrityPipe(manifest).generate_chunks(512)],
-        "LangChain (Text)": RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=0).split_text(" ".join([a.text for a in atoms]))
+        "LangChain (Text)": RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_text(" ".join([a.text for a in atoms]))
     }
 
     # Setup RAGAS LLM (using GitHub Models via LangChain)
     llm = ChatOpenAI(
         model="gpt-4o",
         api_key=token,
-        base_url="https://models.inference.ai.azure.com"
+        base_url="https://models.inference.ai.azure.com",
+        timeout=180
     )
 
     final_results = []
 
+    from ragas.run_config import RunConfig
+    run_config = RunConfig(max_workers=1, timeout=180)
+
     for name, chunks in strategies.items():
         print(f"--- Evaluating {name} ---")
+        import time
         
-        # Simulated Retrieval for RAGAS
+        # Simulated TOP-2 Retrieval for RAGAS (Stability optimization)
         data_for_ragas = []
         for row in dataset_rows:
-            # Find best matching chunk (Top-1 Retrieval simulation)
-            best_chunk = ""
-            best_sim = -1.0
-            q_clean = "".join(row['question'].split()).lower()
+            # Find Top-2 best matching chunks
+            chunk_scores = []
+            q_words = set(row['question'].lower().split())
+            
             for chunk in chunks:
-                if q_clean in "".join(chunk.split()).lower(): sim = 1.0
-                else: sim = 0.5 # basic fallback
-                if sim > best_sim:
-                    best_sim = sim
-                    best_chunk = chunk
+                c_words = set(chunk.lower().split())
+                # Jaccard similarity for retrieval probe
+                sim = len(q_words.intersection(c_words)) / len(q_words.union(c_words)) if q_words else 0.0
+                chunk_scores.append((sim, chunk))
+            
+            # Sort and take Top-2
+            chunk_scores.sort(key=lambda x: x[0], reverse=True)
+            top_2_contexts = [c for s, c in chunk_scores[:2]]
             
             data_for_ragas.append({
                 "question": row['question'],
-                "contexts": [best_chunk],
+                "contexts": top_2_contexts,
                 "ground_truth": row['ground_truth'],
-                "answer": "Generated Answer" # RAGAS sometimes needs a non-N/A answer
+                "answer": "Generated Answer"
             })
 
         # Run Real RAGAS
         dataset = Dataset.from_list(data_for_ragas)
         # We focus on the two metrics that measure CHUNKING QUALITY (Recall and Precision)
         try:
+            # Add a small delay to avoid hitting GitHub Models API rate limits
+            time.sleep(2) 
             result = evaluate(
                 dataset,
                 metrics=[context_recall, context_precision],
-                llm=llm
+                llm=llm,
+                run_config=run_config
             )
             
             # RAGAS 'Result' aggregation fix
-            # Accessing result['metric'] might return a list or a float depending on the version
             def get_mean(val):
-                if isinstance(val, (int, float)): return float(val)
-                if isinstance(val, list): return sum([v for v in val if v is not None]) / len(val) if val else 0.0
-                if hasattr(val, 'values'):
-                    v_list = list(val.values())
-                    return sum([v for v in v_list if v is not None]) / len(v_list) if v_list else 0.0
-                return 0.0
+                if isinstance(val, (int, float)): 
+                    return float(val) if not math.isnan(val) else 0.0
+                
+                items = []
+                if isinstance(val, list):
+                    items = val
+                elif hasattr(val, 'values'):
+                    items = list(val.values())
+                
+                # Filter out None and NaN
+                clean = [v for v in items if v is not None and isinstance(v, (int, float)) and not math.isnan(v)]
+                return sum(clean) / len(clean) if clean else 0.0
 
             recall_val = get_mean(result['context_recall'])
             precision_val = get_mean(result['context_precision'])
         except Exception as e:
             print(f"Evaluation failed for {name}: {e}")
-            import traceback
-            traceback.print_exc()
             recall_val = 0.0
             precision_val = 0.0
         
