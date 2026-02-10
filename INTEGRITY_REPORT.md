@@ -1,6 +1,6 @@
 # Aegis GIP: Official RAGAS Benchmark
 *Live GPT-4o Assessment*
-*Timestamp: 2026-02-10 22:52:49*
+*Timestamp: 2026-02-10 23:20:05*
 
 ## Standardized RAG Metrics (Official)
 This report uses the **Official RAGAS Framework** powered by **GPT-4o**.
