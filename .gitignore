@@ -56,3 +56,6 @@ env/
 samples/*/bin/
 samples/*/obj/
 samples/*/.venv/
+
+# Marketing Assets (Local only)
+docs/marketing/
