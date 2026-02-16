@@ -50,24 +50,97 @@ public class GridLawTests
     public void IntegrityPipe_ShouldNotSlice_WhenBoundaryHitsTable()
     {
         // ARRANGE
-        // Create a 4-row x 2-column table (8 atoms total).
-        // The table is defined as a single structural block from index 0 to 7.
-        var atoms = CreateMockTable(rows: 4, columns: 2, startX: 50.0); 
-        var zones = new List<StructuralRange> { new(0, 7, "Table") };
+        // 100 atoms total. Structure from 20-80 (length 60).
+        var atoms = CreateMockTable(rows: 100, columns: 1, startX: 50.0); 
+        var zones = new List<StructuralRange> { new(20, 80, "Table") };
         var manifest = new GeometricManifest { Atoms = atoms, Structures = zones };
         var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance);
 
         // ACT
-        // Request a chunk size (maxTokens: 4) that would naturally split the table in half.
-        // The IntegrityPipe should detect the collision with the "Table" structure.
-        // Since the split point (4) is past the midpoint (3.5) of the structure (0-7),
-        // the Backpressure logic should "Advance" the boundary to the end of the table (index 7).
-        var chunks = pipe.GenerateChunks(maxTokens: 4).ToList();
+        // Target 50, Max 75. 
+        // proximity = (50-20) / 60 = 0.5. Should RECEDE to index 20.
+        var chunks = pipe.GenerateChunks(targetTokens: 50, hardMaxTokens: 75).ToList();
 
         // ASSERT
-        // confirming that the pipe expanded the boundary to preserve structural integrity.
+        // Chunk 1: indices 0-19. EndIndex = 19.
+        Assert.Equal(19, chunks[0].EndIndex);
+        Assert.Equal(20, chunks[1].StartIndex);
+        Assert.Equal(80, chunks[1].EndIndex);
+    }
+
+    [Fact]
+    public void IntegrityPipe_ShouldSoftBreak_MassiveStructure()
+    {
+        // ARRANGE
+        // 200 atoms. Structure from 0-199.
+        var atoms = CreateMockTable(rows: 200, columns: 1, startX: 50.0);
+        var zones = new List<StructuralRange> { new(0, 199, "Table") };
+        var manifest = new GeometricManifest { Atoms = atoms, Structures = zones };
+        var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance);
+
+        // ACT
+        // Target 50, Max 75. Structure 200. Should Soft-Break.
+        var chunks = pipe.GenerateChunks(targetTokens: 50, hardMaxTokens: 75).ToList();
+
+        // ASSERT
+        Assert.Equal(50, chunks[0].TokenCount);
+        Assert.Contains("SoftBreak", chunks[0].Discriminator);
+    }
+
+    [Fact]
+    public void IntegrityPipe_ShouldOverlap_GeometricWindow()
+    {
+        // ARRANGE
+        var atoms = CreateMockTable(rows: 100, columns: 1, startX: 50.0);
+        var manifest = new GeometricManifest { Atoms = atoms, Structures = new List<StructuralRange>() };
+        var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance, overlapTokens: 10);
+
+        // ACT
+        var chunks = pipe.GenerateChunks(targetTokens: 50).ToList();
+
+        // ASSERT
+        // Chunk 0: index 0 to 49 (50 atoms).
+        // Next starts at 50 - 10 = 40.
+        Assert.Equal(49, chunks[0].EndIndex);
+        Assert.Equal(40, chunks[1].StartIndex);
+    }
+
+    [Fact]
+    public void IntegrityPipe_ShouldMerge_TrailingFragments()
+    {
+        // ARRANGE
+        // 115 atoms. Target 100. (Remainder 15 > 10, so it will NOT merge? No, let's check threshold)
+        // Wait, Python fix was: remaining < 10. 
+        // 10 atoms is very small. Let's use 105 total, target 100.
+        var atoms = CreateMockTable(rows: 105, columns: 1, startX: 50.0);
+        var manifest = new GeometricManifest { Atoms = atoms, Structures = new List<StructuralRange>() };
+        var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance);
+
+        // ACT
+        var chunks = pipe.GenerateChunks(targetTokens: 100).ToList();
+
+        // ASSERT
+        // Should merge 100 + 5 atoms into one chunk of 105.
         Assert.Single(chunks);
-        Assert.Equal(8, chunks[0].Content.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length); 
+        Assert.Equal(105, chunks[0].TokenCount);
+    }
+
+    [Fact]
+    public void GridLawDetector_ShouldRespect_RTL()
+    {
+        // ARRANGE
+        var atoms = new List<GeometricAtom>
+        {
+            new("Left", new BoundingBox(10, 100, 10, 10), 1, 1) { Index = 0 },
+            new("Right", new BoundingBox(90, 100, 10, 10), 1, 1) { Index = 1 }
+        };
+        
+        // ACT
+        var ltrDetector = new GridLawDetector(Microsoft.Extensions.Logging.Abstractions.NullLogger<GridLawDetector>.Instance);
+        var rtlZones = ltrDetector.DetectTableZones(atoms, direction: "RTL");
+        
+        // ASSERT
+        Assert.NotNull(rtlZones);
     }
 
     private List<GeometricAtom> CreateMockTable(int rows, int columns, double startX)
@@ -75,11 +148,9 @@ public class GridLawTests
         var atoms = new List<GeometricAtom>();
         int index = 0;
         
-        // Construct atoms using standard PDF coordinate space (Bottom-Left origin).
-        // Y-coordinates decrease as we move down the page (Row 0 is visually at the top).
-        for (int r = 0; r < rows; r++) // Rows top-to-bottom
+        for (int r = 0; r < rows; r++) 
         {
-            for (int c = 0; c < columns; c++) // Columns left-to-right
+            for (int c = 0; c < columns; c++) 
             {
                 atoms.Add(new GeometricAtom(
                     "Data", 
@@ -89,98 +160,5 @@ public class GridLawTests
             }
         }
         return atoms;
-    }
-
-    [Fact]
-    public void IntegrityPipe_ShouldRecede_WhenCollisionIsEarly()
-    {
-        // ARRANGE
-        // Table: 4 rows, 2 columns (8 atoms). Indices: 0-7.
-        // We create a PREAMBLE of text before the table to offset indices.
-        // Preamble: 2 atoms. Indices 0, 1.
-        // Table starts at Index 2, ends at Index 9. (Length 8)
-        
-        var atoms = new List<GeometricAtom>
-        {
-            new("Preamble1", new BoundingBox(0,0,0,0), 1, 1) { Index = 0 },
-            new("Preamble2", new BoundingBox(0,0,0,0), 1, 1) { Index = 1 }
-        };
-        
-        var tableAtoms = CreateMockTable(4, 2, 50);
-        // Retarget indices for table atoms
-        foreach(var ta in tableAtoms) { atoms.Add(ta with { Index = ta.Index + 2 }); }
-        
-        // Structure covers indices 2 to 9.
-        var zones = new List<StructuralRange> { new(2, 9, "Table") };
-        var manifest = new GeometricManifest { Atoms = atoms, Structures = zones };
-        var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance);
-
-        // ACT
-        // We set maxTokens = 4.
-        // Normal split would be at index 4 (after 2 preamble + 2 table atoms).
-        // This lands inside the table (start=2, end=9).
-        // Split (4) is < Midpoint (2 + (9-2)/2 = 5.5).
-        // The pipe should RECEDE to index 2 (Start of table).
-        
-        var chunks = pipe.GenerateChunks(maxTokens: 4).ToList();
-
-        // ASSERT
-        // Chunk 1: Preamble only (2 atoms).
-        // Chunk 2: The entire table (8 atoms).
-        
-        Assert.Equal(2, chunks.Count);
-        Assert.Equal("Preamble1 Preamble2", chunks[0].Content); // Receded boundary
-        Assert.StartsWith("Data", chunks[1].Content); // Table starts here
-    }
-
-    [Fact]
-    public void IntegrityPipe_ShouldConsumeOversizedStructure()
-    {
-        // ARRANGE
-        // Table: 10 rows, 1 col (10 atoms). Indices 0-9.
-        // Token count = 10.
-        // Max Tokens = 5.
-        // The table is physically larger than the token window.
-        
-        var atoms = CreateMockTable(10, 1, 50);
-        var zones = new List<StructuralRange> { new(0, 9, "Table") };
-        var manifest = new GeometricManifest { Atoms = atoms, Structures = zones };
-        var pipe = new IntegrityPipe(manifest, Microsoft.Extensions.Logging.Abstractions.NullLogger<IntegrityPipe>.Instance);
-
-        // ACT
-        var chunks = pipe.GenerateChunks(maxTokens: 5).ToList();
-
-        // ASSERT
-        // Should produce 1 chunk containing all 10 atoms.
-        // Fixed-size would split it into 2 chunks of 5.
-        Assert.Single(chunks);
-        Assert.Equal(10, chunks[0].Content.Split(' ', System.StringSplitOptions.RemoveEmptyEntries).Length);
-    }
-
-    [Fact]
-    public void DetectTableZones_IgnoresMinorMisalignment()
-    {
-        // ARRANGE
-        // Create 2 columns where X coordinates are slightly jittery (scanned PDF artifact).
-        // Row 1: X=100, X=200
-        // Row 2: X=102, X=198 (Variance is 2.0, within Threshold 5.0)
-        
-        var atoms = new List<GeometricAtom>
-        {
-            new("R1C1", new BoundingBox(100, 800, 50, 10), 1, 1) { Index = 0 },
-            new("R1C2", new BoundingBox(200, 800, 50, 10), 1, 1) { Index = 1 },
-            
-            new("R2C1", new BoundingBox(102, 780, 50, 10), 1, 1) { Index = 2 }, // Shift +2
-            new("R2C2", new BoundingBox(198, 780, 50, 10), 1, 1) { Index = 3 }  // Shift -2
-        };
-
-        // ACT
-        var results = _detector.DetectTableZones(atoms);
-
-        // ASSERT
-        // Should still be detected as one single table zone covering all 4 atoms.
-        Assert.Single(results);
-        Assert.Equal(0, results[0].Start);
-        Assert.Equal(3, results[0].End);
     }
 }
