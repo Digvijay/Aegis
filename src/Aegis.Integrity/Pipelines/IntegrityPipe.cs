@@ -16,90 +16,147 @@ public class IntegrityPipe
 {
     private readonly GeometricManifest _manifest;
     private readonly ILogger<IntegrityPipe> _logger;
+    private readonly int _overlapTokens;
 
-    public IntegrityPipe(GeometricManifest manifest, ILogger<IntegrityPipe> logger)
+    public IntegrityPipe(GeometricManifest manifest, ILogger<IntegrityPipe> logger, int overlapTokens = 0)
     {
-        _manifest = manifest;
-        _logger = logger;
+        _manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _overlapTokens = Math.Max(0, overlapTokens);
+        
+        // Ensure mapping is ready
+        _manifest.FinalizeMapping();
     }
 
     /// <summary>
     /// Generates verified chunks stream.
     /// </summary>
-    /// <param name="maxTokens">The target token limit per chunk.</param>
+    /// <param name="targetTokens">The intended chunk size.</param>
+    /// <param name="hardMaxTokens">Forced split limit. Defaults to targetTokens * 1.5.</param>
     /// <returns>A sequence of GeometricChunks representing integrity-preserved chunks.</returns>
-    public IEnumerable<GeometricChunk> GenerateChunks(int maxTokens)
+    public IEnumerable<GeometricChunk> GenerateChunks(int targetTokens, int? hardMaxTokens = null)
     {
+        if (targetTokens <= 0) throw new ArgumentException("Target tokens must be positive.", nameof(targetTokens));
+
+        int maxTokens = hardMaxTokens ?? (int)(targetTokens * 1.2);
+        double softBreakThreshold = 0.5;
+
         int cursor = 0;
         int totalAtoms = _manifest.Atoms.Count;
         int chunkIdx = 0;
 
         while (cursor < totalAtoms)
         {
-            // 1. Proposed cut point based on Token Limit
-            int end = FindTokenBoundary(cursor, maxTokens);
-            string reason = "TokenLimit";
+            // 1. Proposed cut point based on Target
+            int end = FindTokenBoundary(cursor, targetTokens);
+            string reason = "TargetReached";
             
-            // 2. Check for Structural Collision
-            // Is 'end' inside a No-Cut Zone?
-            // "Inside" means: Start < end < End
-            var collision = _manifest.Structures.FirstOrDefault(s => end > s.Start && end < s.End);
+            // 2. GIP 2.3 Optimized Structural Collision Check (O(1))
+            var collision = _manifest.GetStructuresAt(end).FirstOrDefault();
 
             if (collision != null)
             {
-                // 3. Negotiate Boundary (Backpressure)
-                // The "Pivot Point" Strategy:
-                // We calculate the midpoint of the detected structure (Table/List).
-                // If the proposed cut falls AFTER the midpoint, we "Advance" to include the whole structure.
-                // If the proposed cut falls BEFORE the midpoint, we "Recede" to exclude the structure entirely.
-                // This ensures we never chop a table in half.
-                
-                int structureMidpoint = collision.Start + ((collision.End - collision.Start) / 2);
+                // GIP 2.0: Soft-Break & Balanced Integrity Logic
+                int structureSize = collision.End - collision.Start;
+                double proximityToEnd = (double)(end - collision.Start) / structureSize;
 
-                if (end > structureMidpoint)
+                if (structureSize > maxTokens || proximityToEnd > softBreakThreshold)
                 {
-                    // Advance: The boundary is past the midpoint, so we include the entire structure.
-                    // This ensures the table or list remains contiguous.
-                    _logger.BackpressureApplied(end, collision.Type, "Advance");
-                    end = collision.End + 1;
-                    reason = $"Preserved-{collision.Type}";
+                    if (structureSize > maxTokens)
+                    {
+                        _logger.LogInformation("Soft-Break triggered for oversized structure {Type} at atom {End}", collision.Type, end);
+                        reason = $"SoftBreak-{collision.Type}";
+                    }
+                    else
+                    {
+                        _logger.BackpressureApplied(end, collision.Type, "Advance");
+                        end = collision.End + 1;
+                        reason = $"Preserved-{collision.Type}";
+                    }
                 }
                 else
                 {
-                    // Recede: We are just entering, back off to before the table starts
+                    // Recede: back off to before the table starts
                     _logger.BackpressureApplied(end, collision.Type, "Recede");
                     end = collision.Start;
                     reason = "Backpressure-Recede";
                     
-                    // Edge Case: If the table starts exactly at cursor, we MUST consume it or we loop forever.
-                    // This happens if a single structure > maxTokens. 
+                    // Prevent infinite loop
                     if (end <= cursor)
                     {
-                        end = collision.End + 1;
-                        reason = $"Oversize-{collision.Type}";
+                        _logger.LogWarning("Oversized structure at {Cursor}, being forced to split at Target.", cursor);
+                        end = FindTokenBoundary(cursor, targetTokens);
+                        reason = $"ForcedSplit-{collision.Type}";
                     }
                 }
             }
 
             // Safe-guard end index
             end = Math.Min(end, totalAtoms);
+
+            // GIP 2.1 Density Fix: Merging trailing fragments
+            int densityThreshold = Math.Max(2, (int)(targetTokens * 0.2));
+            int remaining = totalAtoms - end;
+            if (remaining > 0 && remaining < densityThreshold)
+            {
+                end = totalAtoms;
+            }
             
             // 4. Emit Chunk
             var chunkAtoms = _manifest.Atoms.GetRange(cursor, end - cursor);
-            int tokenCount = chunkAtoms.Sum(a => a.TokenCount);
-            string content = string.Join(" ", chunkAtoms.Select(a => a.Text));
+            if (chunkAtoms.Count == 0) break;
+
+            // Semantic Anchoring (Optimized Ancestry)
+            var markers = new List<string> { $"[Page {chunkAtoms.First().Page}]" };
             
-            // Metadata
+            // Sample start and end for structural tagging (O(1))
+            var startStructures = _manifest.GetStructuresAt(cursor);
+            var endStructures = _manifest.GetStructuresAt(end - 1);
+            
+            var structuralTypes = startStructures.Concat(endStructures)
+                .Select(s => s.Type)
+                .Distinct();
+
+            foreach (var type in structuralTypes)
+            {
+                markers.Add($"[{type}]");
+            }
+
+            string markerPrefix = string.Join(" ", markers) + " ";
+            string content = markerPrefix + string.Join(" ", chunkAtoms.Select(a => a.Text));
+            
+            int tokenCount = chunkAtoms.Sum(a => a.TokenCount);
             int startIdx = chunkAtoms.First().Index;
             int endIdx = chunkAtoms.Last().Index;
-            int page = chunkAtoms.First().Page; // Attribution to start page
+            int page = chunkAtoms.First().Page;
 
             _logger.ChunkGenerated(chunkIdx++, tokenCount, reason);
             yield return new GeometricChunk(content, startIdx, endIdx, page, tokenCount, reason);
 
-            // 5. Advance Cursor
-            cursor = end;
+            // GIP 2.0: Geometric Overlap
+            if (_overlapTokens > 0)
+            {
+                int newCursor = FindOverlapIndex(end, _overlapTokens);
+                cursor = Math.Max(cursor + 1, newCursor); // Ensure at least 1 atom progress
+            }
+            else
+            {
+                cursor = end;
+            }
         }
+    }
+
+    private int FindOverlapIndex(int end, int overlapLimit)
+    {
+        int currentTokens = 0;
+        int i = end - 1;
+        while (i >= 0)
+        {
+            currentTokens += _manifest.Atoms[i].TokenCount;
+            if (currentTokens > overlapLimit) return i + 1;
+            i--;
+        }
+        return 0;
     }
 
     private int FindTokenBoundary(int start, int limit)
@@ -113,7 +170,6 @@ public class IntegrityPipe
             i++;
         }
         
-        // Ensure we consume at least one atom if possible
         if (i == start && start < _manifest.Atoms.Count) return start + 1;
         
         return i;

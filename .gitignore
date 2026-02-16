@@ -42,6 +42,7 @@ venv/
 ENV/
 env/
 .env/
+.env
 .pytest_cache/
 .tox/
 .coverage

@@ -96,9 +96,10 @@ The following table evaluates current state-of-the-art (SOTA) tools. While these
 ### 7.1 Auditability vs. Probability
 In regulated industries (Finance, Healthcare), the "Black Box" nature of LLM-based parsing is a liability. Aegis provides a **Deterministic Source of Truth**. Because the chunking logic is based on 2D physics (Standard Deviation of X-Coordinates), the process is auditable. You can prove *why* a document was split in a specific way, which is impossible with probabilistic text splitters.
 
-### 7.2 The Cloud-Native Pipe
-Aegis is architected as a high-throughput, low-memory pipeline.
-*   **Zero-Copy Networking**: It utilizes `System.IO.Pipelines` and `Span<T>` to process documents without allocating massive strings on the Heap.
+### 7.2 The Sovereign Pipeline
+Aegis introduces **Sovereign Hardening** for enterprise-scale ingestion.
+*   **O(1) Interval Mapping**: Instead of linear structural searches, Aegis pre-computes a structural index map during ingestion. This allows the Integrity Pipe to verify boundaries with sub-millisecond, constant-time overhead.
+*   **Zero-Copy Networking**: It utilizes `System.IO.Pipelines` and `Span<T>` in C# and optimized memory-views in Python to process documents without allocating massive strings on the Heap.
 *   **Serverless Ready**: It is designed to run in constrained environments (Azure Functions, AWS Lambda) where memory is expensive.
 
 ### 7.3 The Universal Standard

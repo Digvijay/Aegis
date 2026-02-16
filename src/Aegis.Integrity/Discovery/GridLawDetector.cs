@@ -28,8 +28,9 @@ public class GridLawDetector
     /// Scans a list of geometric atoms and returns ranges identified as tables/grids.
     /// </summary>
     /// <param name="atoms">List of atoms on a page.</param>
+    /// <param name="direction">"LTR" or "RTL"</param>
     /// <returns>List of structural ranges representing no-cut zones.</returns>
-    public List<StructuralRange> DetectTableZones(List<GeometricAtom> atoms)
+    public List<StructuralRange> DetectTableZones(List<GeometricAtom> atoms, string direction = "LTR")
     {
         if (atoms.Count > 0)
         {
@@ -41,6 +42,7 @@ public class GridLawDetector
         // Group atoms into horizontal lines (clustered by Y coordinate)
         var rows = atoms.GroupBy(a => Math.Round(a.Bounds.Y, 1))
                         .OrderByDescending(g => g.Key) // Top to bottom
+                        .Select(g => direction == "RTL" ? g.OrderByDescending(a => a.Bounds.X).ToList() : g.OrderBy(a => a.Bounds.X).ToList())
                         .ToList();
 
         int? startRowIndex = null;

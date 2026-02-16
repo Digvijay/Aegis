@@ -28,8 +28,30 @@ class StructuralRange:
 
 class GeometricManifest:
     def __init__(self, atoms: List[GeometricAtom], structures: List[StructuralRange]):
+        """
+        Maintains a pre-computed Interval Map for O(1) structural verification.
+        """
+        if atoms is None:
+            raise ValueError("GeometricManifest requires a non-null atoms list.")
+        
         self.atoms = atoms
-        self.structures = structures
+        self.structures = structures or []
+        
+        # GIP 2.3 Sovereign Hardening: Pre-compute Structural Index Map
+        # Maps atom index -> List[StructuralRange] for O(1) logical lookups
+        self._index_map = [[] for _ in range(len(atoms) + 1)]
+        for s in self.structures:
+            # Ensure boundaries are safe
+            safe_start = max(0, min(s.start, len(atoms) - 1))
+            safe_end = max(0, min(s.end, len(atoms) - 1))
+            for i in range(safe_start, safe_end + 1):
+                self._index_map[i].append(s)
+
+    def get_structures_at(self, atom_index: int) -> List[StructuralRange]:
+        """O(1) lookup for structures containing the given atom."""
+        if 0 <= atom_index < len(self._index_map):
+            return self._index_map[atom_index]
+        return []
 
 
 class GridLawDetector:
@@ -39,7 +61,11 @@ class GridLawDetector:
     """
     ALIGNMENT_THRESHOLD = 5.0  # Points (variance allowed)
 
-    def detect_table_zones(self, atoms: List[GeometricAtom]) -> List[StructuralRange]:
+    def detect_table_zones(self, atoms: List[GeometricAtom], direction: str = "LTR") -> List[StructuralRange]:
+        """
+        Detects tabular structures. 
+        :param direction: "LTR" (Left-to-Right) or "RTL" (Right-to-Left)
+        """
         if not atoms:
             return []
 
@@ -63,12 +89,16 @@ class GridLawDetector:
         # Let's assume generic Y sorting. If Top-Left logic (Y increases downwards), we sort by Y.
         # If Bottom-Left (Y increases upwards), we sort descending.
         # SAFE BET: Sort by Y descending (Top to Bottom for PDF standard coordinates).
+        # Sort rows top to bottom
         sorted_y = sorted(rows_dict.keys(), reverse=True)
         rows = [rows_dict[y] for y in sorted_y]
         
-        # Ensure atoms in each row are sorted X-ascending (Left to Right)
+        # Ensure atoms in each row are sorted by reading order
         for r in rows:
-            r.sort(key=lambda a: a.bounds.x)
+            if direction == "RTL":
+                r.sort(key=lambda a: a.bounds.x, reverse=True)
+            else:
+                r.sort(key=lambda a: a.bounds.x)
 
         start_row_index: Optional[int] = None
 
@@ -136,64 +166,117 @@ class GeometricChunk:
     discriminator: str
 
 class IntegrityPipe:
-    def __init__(self, manifest: GeometricManifest):
+    """Enterprise-grade Geometric Integrity Pipeline."""
+    def __init__(self, manifest: GeometricManifest, overlap_tokens: int = 0):
+        if not manifest:
+            raise ValueError("IntegrityPipe requires a valid GeometricManifest.")
         self.manifest = manifest
+        self.overlap_tokens = max(0, overlap_tokens)
 
-    def generate_chunks(self, max_tokens: int) -> Generator[GeometricChunk, None, None]:
+    def generate_chunks(self, target_tokens: int, hard_max_tokens: Optional[int] = None) -> Generator[GeometricChunk, None, None]:
         """
-        Generates text chunks that respect the geometric integrity of the document.
-        :param max_tokens: Maximum tokens per chunk.
-        :return: Generator yielding GeometricChunk objects.
+        Generates text chunks using optimized O(1) structural verification.
         """
+        if target_tokens <= 0:
+            raise ValueError("target_tokens must be positive")
+
+        if hard_max_tokens is None:
+            hard_max_tokens = int(target_tokens * 1.2) # Conservative preference
+
+        soft_break_threshold = 0.5 
         cursor = 0
         total_atoms = len(self.manifest.atoms)
         chunk_idx = 0
 
         while cursor < total_atoms:
-            # 1. Proposed cut point
-            end = self._find_token_boundary(cursor, max_tokens)
-            reason = "TokenLimit"
+            # 1. Proposed cut point based on Target
+            end = self._find_token_boundary(cursor, target_tokens)
+            reason = "TargetReached"
             
-            # 2. Check for Structural Collision
-            collision = next((s for s in self.manifest.structures if s.start < end < s.end), None)
+            # 2. GIP 2.3 Optimized Structural Collision Check (O(1))
+            # Peek at the boundary atom's structural associations
+            structures = self.manifest.get_structures_at(end)
+            collision = structures[0] if structures else None
             
             if collision:
-                # 3. Negotiate Boundary (Backpressure)
-                midpoint = collision.start + ((collision.end - collision.start) / 2)
+                # GIP 2.0: Soft-Break & Target Logic
+                structure_size = collision.end - collision.start
+                proximity_to_end = (end - collision.start) / max(1, structure_size)
                 
-                if end > midpoint:
-                    # Advance: consume whole structure
-                    logger.debug(f"Backpressure Advance at atom {end} for structure type {collision.type}")
-                    end = collision.end + 1
-                    reason = f"Preserved-{collision.type}"
+                if structure_size > hard_max_tokens or proximity_to_end > soft_break_threshold:
+                    if structure_size > hard_max_tokens:
+                        logger.info(f"Soft-Break for oversized {collision.type}")
+                        reason = f"SoftBreak-{collision.type}"
+                    else:
+                        end = collision.end + 1
+                        reason = f"Preserved-{collision.type}"
                 else:
-                    # Recede: back off to start
-                    logger.debug(f"Backpressure Recede at atom {end}, backing off to {collision.start}")
                     end = collision.start
                     reason = "Backpressure-Recede"
                     
-                    # Prevent infinite loop if structure > max_tokens
                     if end <= cursor:
-                        logger.warning(f"Oversized structure at {cursor}, being forced to consume.")
-                        end = collision.end + 1
-                        reason = f"Oversize-{collision.type}"
+                        end = self._find_token_boundary(cursor, target_tokens)
+                        reason = f"ForcedSplit-{collision.type}"
             
             end = min(end, total_atoms)
             
             # 4. Emit Chunk
             chunk_atoms = self.manifest.atoms[cursor:end]
-            content = " ".join(atom.text for atom in chunk_atoms)
+            if not chunk_atoms:
+                break
+                
+            # Density Fix: Merging trailing fragments
+            # Use a percentage of target tokens rather than a hard constant (10)
+            density_threshold = max(2, int(target_tokens * 0.2)) 
+            remaining = total_atoms - end
+            if 0 < remaining < density_threshold: 
+                end = total_atoms
+                chunk_atoms = self.manifest.atoms[cursor:end]
+
+            # Semantic Anchoring: Enhanced Contextual Ancestry
+            page_val = chunk_atoms[0].page
+            
+            # Identify structures involving this chunk (O(1) lookup)
+            s_types = []
+            for atomic_idx in [cursor, end - 1]:
+                at_structures = self.manifest.get_structures_at(atomic_idx)
+                for s in at_structures:
+                    if s.type not in s_types:
+                        s_types.append(s.type)
+            
+            markers = [f"[Page {page_val}]"]
+            for t in s_types:
+                markers.append(f"[{t}]")
+            
+            prefix = " ".join(markers) + " " if markers else ""
+            content = prefix + " ".join(atom.text for atom in chunk_atoms)
+            
             token_count = sum(a.token_count for a in chunk_atoms)
             start_idx = chunk_atoms[0].index
             end_idx = chunk_atoms[-1].index
-            page = chunk_atoms[0].page
 
-            logger.info(f"Generated chunk {chunk_idx} with {len(chunk_atoms)} atoms.")
+            logger.info(f"Aegis Chunk {chunk_idx}: {token_count} tokens ({reason})")
             chunk_idx += 1
-            yield GeometricChunk(content, start_idx, end_idx, page, token_count, reason)
+            yield GeometricChunk(content, start_idx, end_idx, page_val, token_count, reason)
             
-            # 5. Advance
-            cursor = end
+            # GIP 2.0: Geometric Overlap
+            # Move cursor back by overlap amount, but ensure progress
+            if self.overlap_tokens > 0:
+                new_cursor = self._find_token_overlap(end, self.overlap_tokens)
+                cursor = max(cursor + 1, new_cursor) # Ensure at least 1 atom progress
+            else:
+                cursor = end
+
+    def _find_token_overlap(self, end: int, overlap_limit: int) -> int:
+        """Finds the index to start the next chunk for overlap."""
+        current_tokens = 0
+        i = end - 1
+        while i >= 0:
+            current_tokens += self.manifest.atoms[i].token_count
+            if current_tokens > overlap_limit:
+                return i + 1
+            i -= 1
+        return 0
 
     def _find_token_boundary(self, start: int, limit: int) -> int:
         current_tokens = 0

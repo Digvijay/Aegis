@@ -1,16 +1,16 @@
-# Aegis GIP: Official RAGAS Benchmark
-*Live GPT-4o Assessment*
-*Timestamp: 2026-02-10 23:20:05*
+# Aegis GIP: High-Fidelity RAG Audit
+*Evaluation Methodology: Curated Golden Set + RAGAS 0.4.3 + Azure GPT-4o*
+*Timestamp: 2026-02-16 23:30:44*
 
-## Standardized RAG Metrics (Official)
-This report uses the **Official RAGAS Framework** powered by **GPT-4o**.
+## The RAGAS Triad Scorecard
+| Strategy | Context Recall | Context Precision | Faithfulness | Index Efficiency |
+| :--- | :--- | :--- | :--- | :--- |
+| **Aegis (Geometric)** | 0.182 | 0.182 | 0.731 | 0.99x |
+| **Recursive (Text)** | 0.273 | 0.364 | 0.656 | 0.82x |
+| **Naive (Fixed)** | 0.182 | 0.273 | 0.792 | 1.00x |
 
-| Strategy | Context Recall (Official) | Context Precision (Official) |
-| :--- | :--- | :--- |
-| **Aegis GIP** | **0.667** | **0.542** |
-| LangChain | 0.300 | 0.300 |
+> [!NOTE]
+> **Index Efficiency**: Measures how much redundant text (overlap) is stored. 1.0x means zero redundancy (Aegis). Recursive splitters typically score <0.8x due to 20% overlap bloat.
 
-## Technical Validation
-Standard RAGAS logic confirms that Aegis achieves superior **Context Recall** for structured data. Because text splitters fragment tables, the LLM-as-a-judge correctly identifies that the retrieved context is incomplete, leading to a massive recall penalty for industry standard methods.
-
-Aegis GIP provides a **Layout-Aware guarantee** that RAGAS metrics can now definitively quantify.
+## Methodology Notice
+This benchmark was executed using **Azure OpenAI (GPT-4o)** to ensure high-fidelity semantic auditing. Evaluation used the **RAGAS 0.4.3 Pipeline** for deep semantic auditing of the Aegis Geometric Integrity Protocol vs. traditional text splitting.
